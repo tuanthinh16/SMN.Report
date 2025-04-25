@@ -1,6 +1,7 @@
 ﻿using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -14,5 +15,6 @@ namespace SMN.ReportBase
         bool GetData(JObject jsonFilter);
         bool ProcessData();
         bool ExportData(SMG.Models.Report report, string outputFile);
+        (bool, MemoryStream) ExportDataPDF(SMG.Models.Report report, string outputFile);
     }
 }

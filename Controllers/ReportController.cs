@@ -5,7 +5,9 @@ using SMN.TokenHelper;
 using System;
 using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
+using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Web;
 using System.Web.Http;
@@ -63,8 +65,30 @@ namespace SMN.Report.Controllers
                     return BadRequest(createReport.GetError());
                 }
                 outputFile = createReport.GetOutputFile();
-                
-            }
+                MemoryStream pdfFile = createReport.ExportDataPDF();
+                if (pdfFile == null)
+                {
+                    return InternalServerError(new Exception("Failed to generate PDF."));
+                }
+
+                // Trả file PDF cho client
+                return ResponseMessage(new HttpResponseMessage
+                {
+                    Content = new ByteArrayContent(pdfFile.ToArray())
+                    {
+                        Headers =
+                        {
+                            ContentType = new MediaTypeHeaderValue("application/pdf"),
+                            ContentDisposition = new ContentDispositionHeaderValue("attachment")
+                            {
+                                FileName = "Report.pdf"
+                            }
+                        }
+                                }
+                    });
+
+                }
+            
             return Ok(new
             {
                 message = "Create successfully",

@@ -19,6 +19,7 @@ namespace SMN.Report.Processor
 {
     public class LoadReportDll
     {
+        public static MemoryStream pdfFile { get; set; }
         public static bool LoadData(string reportTypeCode, string jsonFilter, ref string error, ref string outputFileName,string username)
         {
             // Load the report dll
@@ -94,7 +95,12 @@ namespace SMN.Report.Processor
                                 bool isGetData = report.GetData(filtered);
                                 bool isProcessData = isGetData ? report.ProcessData() : false;
                                 bool isExportData = isGetData && isProcessData ? report.ExportData(reportData, outputFileName) : false;
-                                isSuccessful = isSuccessful && isExportData && isGetData && isProcessData;
+                                (bool export,MemoryStream file) = report.ExportDataPDF(reportData, outputFileName);
+                                if(export)
+                                {
+                                    pdfFile = file;
+                                }
+                                isSuccessful = isSuccessful && isExportData && isGetData && isProcessData && export;
 
                             }
                         }
@@ -337,5 +343,7 @@ namespace SMN.Report.Processor
             // Return null if the assembly is not found
             return null;
         }
+
+        
     }
 }

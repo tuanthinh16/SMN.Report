@@ -3,6 +3,7 @@ using SMG.Logging;
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Data.Common;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -10,70 +11,47 @@ using System.Threading.Tasks;
 
 namespace SMN.DBHelper
 {
-    public class DBHelper : IDisposable
+    public class DBHelper:IDisposable
     {
         private readonly string _connectionString;
         private NpgsqlConnection _connection;
 
-        // Semaphore để giới hạn số lượng thread kết nối đồng thời
-        private static SemaphoreSlim semaphore = new SemaphoreSlim(20); // Ví dụ: tối đa 20 luồng
-
         // Constructor để khởi tạo chuỗi kết nối
         public DBHelper()
         {
-            string connectionString = "Host=localhost;Port=1521;Username=postgres;Password=Thinh1637;Database=SMN_RS";
+            string connectionString = "Host=localhost;Port=1521;Username=postgres;Password=Thinh1637;Database=SMN_RS;MaxPoolSize=100;Timeout=60;";
 
             _connectionString = connectionString;
-        }
-        public void Dispose()
-        {
-            // Đóng kết nối khi đối tượng được giải phóng
-            if (_connection != null)
-            {
-                _connection.Close();
-                _connection.Dispose();
-            }
+            OpenConnectionAsync().Wait();
+
         }
         public async Task<NpgsqlConnection> OpenConnectionAsync()
         {
-            await semaphore.WaitAsync();
             try
             {
-                if (_connection == null || _connection.State != System.Data.ConnectionState.Open)
+                LogSystem.Info("Checking connection state...");
+
+                if (_connection == null || _connection.State != ConnectionState.Open)
                 {
+                    LogSystem.Info("Opening new connection...");
                     _connection = new NpgsqlConnection(_connectionString);
                     _connection.Open();
+                    LogSystem.Info("Connection opened successfully.");
                 }
+                else
+                {
+                    LogSystem.Info("Connection already open.");
+                }
+
+                return _connection;
             }
             catch (Exception ex)
             {
-                LogSystem.Error(ex);
-                semaphore.Release();
-                throw;
+                LogSystem.Error($"Failed to open connection: {ex.Message}");
+                throw; // Không cần return null vì lỗi sẽ bị bắt ở nơi gọi hàm.
             }
-            return _connection;
         }
 
-        // Phương thức đóng kết nối
-        public void CloseConnection()
-        {
-            try
-            {
-                if (_connection != null && _connection.State == System.Data.ConnectionState.Open)
-                {
-                    _connection.Close();
-                    _connection.Dispose();
-                }
-            }
-            catch (Exception ex)
-            {
-                LogSystem.Error(ex);
-            }
-            finally
-            {
-                semaphore.Release();  // Giải phóng semaphore sau khi kết thúc kết nối
-            }
-        }
 
         // Phương thức thực hiện truy vấn bất đồng bộ
         public async Task<List<T>> ExecuteQueryAsync<T>(string query, Func<NpgsqlDataReader, T> mapFunction)
@@ -101,10 +79,7 @@ namespace SMN.DBHelper
             {
                 LogSystem.Error(ex);
             }
-            finally
-            {
-                CloseConnection();
-            }
+
             return result;
         }
 
@@ -131,10 +106,7 @@ namespace SMN.DBHelper
             {
                 LogSystem.Error(ex);
             }
-            finally
-            {
-                CloseConnection();
-            }
+
 
             return affectedRows;
         }
@@ -144,37 +116,44 @@ namespace SMN.DBHelper
 
             try
             {
-                using (var connection = await OpenConnectionAsync())
+                NpgsqlConnection connection = null;
+                if (_connection == null || _connection.State != ConnectionState.Open)
                 {
-                    using (var command = new NpgsqlCommand(query, connection))
-                    {
-                        // Kiểm tra nếu parameters != null và có phần tử
-                        if (parameters != null && parameters.Count > 0)
-                        {
-                            foreach (var param in parameters)
-                            {
-                                command.Parameters.AddWithValue(param.Key, param.Value ?? DBNull.Value);
-                            }
-                        }
+                    connection = await OpenConnectionAsync();
+                }
+                else
+                {
+                    connection = _connection;
+                }
 
-                        using (var reader = await command.ExecuteReaderAsync())
+                LogSystem.Debug("Run SQL: " + query);
+                using (var command = new NpgsqlCommand(query, connection))
+                {
+                    // Kiểm tra nếu parameters != null và có phần tử
+                    if (parameters != null && parameters.Count > 0)
+                    {
+                        foreach (var param in parameters)
                         {
-                            while (await reader.ReadAsync())
-                            {
-                                result.Add(mapFunction((NpgsqlDataReader)reader));
-                            }
+                            command.Parameters.AddWithValue(param.Key, param.Value ?? DBNull.Value);
+                        }
+                    }
+
+                    using (var reader = await command.ExecuteReaderAsync().ConfigureAwait(false))
+                    {
+                        while (await reader.ReadAsync().ConfigureAwait(false))
+                        {
+                            result.Add(mapFunction((NpgsqlDataReader)reader));
                         }
                     }
                 }
+                LogSystem.Debug("Run SQL END" );
+
             }
             catch (Exception ex)
             {
                 LogSystem.Error(ex);
             }
-            finally
-            {
-                CloseConnection();
-            }
+
             return result;
         }
         public static T MapToObject<T>(IDataRecord reader) where T : new()
@@ -196,6 +175,35 @@ namespace SMN.DBHelper
             return obj;
         }
 
+        public void Dispose()
+        {
+            CloseConnection();
+        }
+        public void CloseConnection()
+        {
+            try
+            {
+                if (_connection != null)
+                {
+                    if (_connection.State == System.Data.ConnectionState.Open)
+                    {
+                        LogSystem.Info("Closing connection...");
+                        _connection.Close();
+                        LogSystem.Info("Connection closed successfully.");
+                    }
+
+                    // Giải phóng tài nguyên
+                    _connection.Dispose();
+                    _connection = null; // Đặt về null để tránh sử dụng lại kết nối đã đóng
+                }
+            }
+            catch (Exception ex)
+            {
+                LogSystem.Error($"Error while closing connection: {ex.Message}");
+                LogSystem.Error(ex); // Log stack trace
+            }
+        }
+
     }
-    
+
 }

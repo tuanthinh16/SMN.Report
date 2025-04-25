@@ -18,6 +18,8 @@ namespace SMN.Report.Processor
             bool result = true;
             try
             {
+                return true;
+                // bỏ qua để return pdf luôn thay vì lưu
                 FlexCelReport report = new FlexCelReport();
                 (XlsFile xls, string outPath) = ProcessOutput(reportFileName, reportTypeCode, outputFile);
                 if(xls == null)

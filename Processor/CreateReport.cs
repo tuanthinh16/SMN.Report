@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Web;
 
@@ -30,6 +31,10 @@ namespace SMN.Report.Processor
         public string GetError()
         {
             return error;
+        }
+        public MemoryStream ExportDataPDF()
+        {
+            return LoadReportDll.pdfFile;
         }
 
     }
